@@ -1,0 +1,272 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+
+	<script>
+	
+// Constantes:
+var BLACK = "rgb(0,0,0)";
+var WHITE = "rgb(255,255,255)";
+
+var MARGIN = 20;
+var PADDLE_HEIGHT = 40;
+var PADDLE_WIDTH = 10;
+var PADDLE_SPEED = 5;
+
+var LEFT = 0;
+var RIGHT = 1;
+
+var INITIAL_ANGLE = 45;
+var INITIAL_SPEED = 2;
+var INITIAL_BALL_SIDE = 10;
+
+var FPS = 60;
+var DIFFICULTY = 0.1;
+
+// Variables globales
+var canvas;
+var context;
+
+function init(){
+    canvas = document.getElementById('pong');
+    if (canvas.getContext) {
+    	context = canvas.getContext('2d');
+    	return true;
+    } else {
+    	document.write('navegador no soportado');
+    	return false;
+    }
+}
+
+function drawNet(netColor){
+    // Ya que *todavia* no existe la posibilidad de dibujar lineas discontinuas
+    // de manera nativa en canvas debemos crearla nosotros
+    var segmentLength = canvas.height / 69; 
+    // 69 es el numero de segmentos que deseamos (70) menos el último
+
+    // Dibujamos todos los segmentos
+    var y = 0;
+    context.lineWidth = 2;
+    context.strokeStyle = netColor;
+    while (y <= canvas.height){
+	context.beginPath();
+	context.moveTo(canvas.width/2, y);
+	context.lineTo(canvas.width/2, y + segmentLength);
+	context.stroke();
+	y += segmentLength * 2;
+    }
+}
+
+function paintField(fieldColor, netColor){
+    // Para pintar el fondo utilizaremos un rectangulo de las mismas
+    // dimensiones que el canvas y lo colorearemos:
+    context.fillStyle = fieldColor;
+    context.fillRect(0,0,canvas.width,canvas.height);
+}
+
+function drawField(fieldColor, netColor)
+{
+    // Dibujamos el campo
+    paintField(fieldColor);
+
+    // Y ahora dibujamos la red
+    drawNet(netColor);
+}
+
+// Constructor de Paddle:
+function Paddle(x, y, width, height, color){
+    this.x = x;
+    this.y = y;
+    this.width = width;
+    this.height = height;
+    this.color = color;
+
+    this.draw = function(){
+	context.fillStyle = color;
+	context.fillRect(this.x,this.y,this.width,this.height);
+    }
+}
+
+// Constructor de Ball:
+function Ball(x, y, side, angle, color){
+    this.x = x;
+    this.y = y;
+    this.side = side;
+    this.angle = angle;
+    this.speed = INITIAL_SPEED;
+    this.color = color;
+
+    this.draw = function(){
+	context.fillStyle = color;
+	context.fillRect(this.x,this.y,this.side,this.side);
+    }
+
+    this.update = function(){
+	this.x += this.speed * Math.cos(this.angle);
+	this.y += this.speed * Math.sin(this.angle);
+    }
+}
+
+// Gestor de fisicas:
+function Physics(){}
+// Comprueba si hemos chocado contra una pared
+Physics.checkWalls = function(ball){
+    if (ball.y < 0){
+	ball.y = 0;
+	ball.angle = deg2rad(360) - ball.angle;
+    } else if (ball.y + ball.side> canvas.height) {
+	ball.y = canvas.height - ball.side;
+	ball.angle = deg2rad(360) - ball.angle;
+    } else if (ball.x + ball.side < 0){
+	// Ha marcado el jugador 2
+    } else if (ball.x > canvas.width){
+	// Ha marcado el jugador 1
+    }
+};
+
+// Comprueba si ha habido una colision entre la pelota y una raqueta
+Physics.checkCollisions = function(lPaddle, rPaddle, ball){
+    if ((ball.x > lPaddle.x)&&(ball.x < lPaddle.x+lPaddle.width) && 
+	(ball.y+ball.side > lPaddle.y)&&(ball.y < lPaddle.y+lPaddle.height)){
+
+	var newAngle = (ball.y + ball.side/2) - (lPaddle.y + lPaddle.height/2);
+	newAngle /= lPaddle.height/2 + ball.side/2;
+	newAngle = deg2rad(80*newAngle);
+	ball.angle = newAngle;
+	ball.speed += 0.4;
+
+    } else if ((ball.x+ball.side < rPaddle.x+rPaddle.width) && 
+	       (ball.x+ball.side > rPaddle.x) &&
+	       (ball.y+ball.side > rPaddle.y) && 
+	       (ball.y < rPaddle.y+rPaddle.height)){
+
+	var newAngle = (rPaddle.y + rPaddle.height/2) - (ball.y + ball.side/2);
+	newAngle /= rPaddle.height/2 + ball.side/2;
+	newAngle = deg2rad(180 + 80*newAngle);
+	ball.angle = newAngle;
+	ball.speed += 0.4;
+
+    }
+}
+
+
+// Funcion de ayuda para pasar de grados a radianes:
+function deg2rad(deg){
+    return (deg * Math.PI/180);
+}
+
+function Game(){
+    var game = this;
+    if (!init()) 
+	{
+	    alert('CRASH!!!!');
+	    return -1;
+	}
+    // Atributos:
+
+    // Definimos los colores que vamos a usar:
+    var fieldColor = BLACK;
+    var netColor = WHITE;
+    var paddleColor = WHITE;
+    var ballColor = WHITE;
+
+    // Definimos las raquetas:
+    var leftPaddle = new Paddle(MARGIN, canvas.height/2 - PADDLE_HEIGHT/2,
+				PADDLE_WIDTH, PADDLE_HEIGHT, paddleColor);
+    var rightPaddle = new Paddle(canvas.width - MARGIN - PADDLE_WIDTH,
+				 canvas.height/2 - PADDLE_HEIGHT/2,
+				 PADDLE_WIDTH, PADDLE_HEIGHT, paddleColor);
+
+    // Funcion que coloca la pelota segun que jugador saque:
+    this.placeBall = function(fieldSide){
+       	var x = 0;//fieldSide * canvas.width;
+	var y = 0;
+	var angle = 0;
+	if (fieldSide == LEFT){
+	    x += leftPaddle.x + leftPaddle.width;
+	    y = leftPaddle.y + leftPaddle.height/2 - INITIAL_BALL_SIDE/2;
+	    angle = deg2rad(INITIAL_ANGLE);
+	    
+	} else {
+	    x += rightPaddle.x - INITIAL_BALL_SIDE;
+	    y = rightPaddle.y + rightPaddle.height/2 - INITIAL_BALL_SIDE/2;
+	    angle = deg2rad(180+INITIAL_ANGLE);
+	}
+	return new Ball(x, y, INITIAL_BALL_SIDE, angle, ballColor);
+    }
+
+    // Creamos la pelota
+    var ball = this.placeBall(LEFT);
+    
+    this.keyPressed = function(evt){
+	switch (evt.keyCode) {
+	case 38:{  /* Arriba */
+	    leftPaddle.y -= PADDLE_SPEED;
+	    if (leftPaddle.y < 0) leftPaddle.y = 0;
+	    break;
+	}
+	case 40:{  /* Abajo */
+	    leftPaddle.y += PADDLE_SPEED;
+	    if (leftPaddle.y + leftPaddle.height > canvas.height)
+		leftPaddle.y = canvas.height - leftPaddle.height;
+	    break;
+	}
+	}
+    }
+
+    window.addEventListener('keydown',this.keyPressed, true);
+
+    this.draw = function(){
+	// Creamos el campo de juego:
+	drawField(fieldColor, netColor); 
+
+	// Dibujamos las raquetas:
+	leftPaddle.draw();
+	rightPaddle.draw();	
+	
+	// Dibujamos la pelota:
+	ball.draw();
+    }
+
+    this.update = function(){
+	Physics.checkWalls(ball);
+	Physics.checkCollisions(leftPaddle, rightPaddle, ball);
+
+	// "Inteligencia artificial"
+	rightPaddle.y += (ball.y + ball.side/2 -
+			  rightPaddle.y - rightPaddle.height/2) * DIFFICULTY;
+
+	if (rightPaddle.y < 0) rightPaddle.y = 0;
+	else if (rightPaddle.y + rightPaddle.height > canvas.height)
+	    rightPaddle.y = canvas.height - rightPaddle.height;
+
+	// Comprobamos si alguien ha marcado un punto:
+	if (ball.x + ball.side < 0){
+	    ball = game.placeBall(LEFT);
+	} else if (ball.x > canvas.width){
+	    ball = game.placeBall(RIGHT);
+	}
+
+	ball.update();
+    }
+
+    setInterval(this.draw, 1000/FPS);
+
+    setInterval(this.update, 1000/FPS);
+}
+
+	</script>
+
+<title>PING PONG</title>
+</head>
+
+<body>
+<canvas id="pong" width="500" height="400">Navegador no soportado</canvas>
+
+<script type="text/JavaScript">
+game = new Game();
+</script>
+
+</body>
+
+</html>
